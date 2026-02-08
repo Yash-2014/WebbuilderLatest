@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Builder - Part 4 (Page Manager)</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* --- CORE STYLES (From Part 1, 2, 3) --- */
+        :root {
+            --editor-bg: #1e1e1e;
+            --panel-bg: #252526;
+            --border-color: #3e3e42;
+            --accent: #007acc;
+            --text-main: #ffffff;
+            --text-sub: #cccccc;
+            --hover-bg: #37373d;
+            --input-bg: #3c3c3c;
+        }
+
+        * { box-sizing: border-box; outline: none; user-select: none; }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: var(--editor-bg); color: var(--text-main); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+        /* HEADER */
+        header { height: 50px; background: var(--panel-bg); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+        .brand { font-weight: bold; font-size: 1.1rem; color: var(--accent); display: flex; align-items: center; gap: 10px; }
+        .top-actions button { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 600; margin-left: 10px; }
+        
+        .device-toggle { display: flex; background: #333; border-radius: 4px; padding: 2px; }
+        .device-btn { background: transparent; border: none; color: #aaa; padding: 5px 10px; cursor: pointer; }
+        .device-btn.active { background: #555; color: #fff; border-radius: 3px; }
+
+        /* WORKSPACE */
+        .workspace { display: flex; flex: 1; height: calc(100vh - 50px); }
+
+        /* SIDEBAR */
+        .sidebar { width: 60px; background: #333333; display: flex; flex-direction: column; align-items: center; border-right: 1px solid var(--border-color); padding-top: 10px; z-index: 10; }
+        .tool-icon { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 1.2rem; cursor: pointer; margin-bottom: 10px; border-radius: 8px; transition: 0.2s; }
+        .tool-icon:hover, .tool-icon.active { background: var(--accent); color: white; }
+        
+        /* DRAWER PANEL */
+        .drawer-panel { width: 250px; background: var(--panel-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; transition: 0.3s; overflow-y: auto; }
+        .panel-header { padding: 15px; border-bottom: 1px solid var(--border-color); font-weight: 600; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; color: #aaa; display:flex; justify-content:space-between; align-items:center; }
+        
+        /* DRAGGABLE ITEMS */
+        .draggable-item {
+            background: var(--hover-bg); padding: 12px; margin-bottom: 8px; border-radius: 6px; margin-left:10px; margin-right:10px;
+            cursor: grab; display: flex; align-items: center; gap: 10px; border: 1px solid transparent;
+            font-size: 0.9rem; color: #ddd; transition: 0.2s;
+        }
+        .draggable-item:hover { border-color: var(--accent); background: #444; }
+
+        /* --- PART 4: PAGE LIST STYLES --- */
+        .page-item {
+            padding: 12px 15px; cursor: pointer; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; transition: 0.2s;
+        }
+        .page-item:hover { background: var(--hover-bg); }
+        .page-item.active-page { background: #007acc33; border-left: 3px solid var(--accent); }
+        .page-name { font-size: 0.9rem; font-weight: 500; }
+        .page-actions i { font-size: 0.8rem; color: #888; margin-left: 8px; cursor: pointer; }
+        .page-actions i:hover { color: #fff; }
+
+        .add-page-box { padding: 15px; border-top: 1px solid var(--border-color); }
+        .btn-add-page { width: 100%; padding: 8px; background: #333; border: 1px solid #555; color: white; border-radius: 4px; cursor: pointer; }
+        .btn-add-page:hover { background: #444; border-color: #666; }
+
+        /* CANVAS */
+        .canvas-area { flex: 1; background: #1e1e1e; display: flex; justify-content: center; align-items: center; position: relative; overflow: hidden; background-image: radial-gradient(#333 1px, transparent 1px); background-size: 20px 20px; }
+        .mobile-frame { width: 375px; height: 750px; background: white; border-radius: 30px; box-shadow: 0 0 50px rgba(0,0,0,0.5); border: 12px solid #111; position: relative; overflow: hidden; transition: 0.3s; }
+        .notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 150px; height: 25px; background: #111; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; z-index: 100; }
+        
+        #app-preview { 
+            width: 100%; height: 100%; overflow-y: auto; background: #f3f4f6; color: #333; 
+            padding-top: 30px; padding-bottom: 50px;
+        }
+        #app-preview::-webkit-scrollbar { display: none; }
+
+        /* LIVE ELEMENTS */
+        .live-element { position: relative; cursor: pointer; border: 2px solid transparent; transition: all 0.1s; }
+        .live-element:hover { border: 2px dashed #007acc55; }
+        .live-element.selected { border: 2px solid var(--accent); z-index: 10; }
+        .drop-zone-active { background-color: #e0e7ff !important; box-shadow: inset 0 0 0 2px var(--accent); }
+
+        /* PROPERTIES PANEL */
+        .properties-panel { width: 320px; background: var(--panel-bg); border-left: 1px solid var(--border-color); overflow-y: auto; display: flex; flex-direction: column; }
+        .prop-group { padding: 15px; border-bottom: 1px solid var(--border-color); }
+        .prop-group h4 { margin: 0 0 10px 0; font-size: 0.8rem; text-transform: uppercase; color: #888; letter-spacing: 0.5px; }
+        .prop-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .prop-row label { font-size: 0.85rem; color: #ccc; }
+        input[type="text"], input[type="number"], select, textarea { background: var(--input-bg); border: 1px solid #555; color: white; padding: 6px; border-radius: 4px; font-size: 0.85rem; width: 100%; }
+        input[type="color"] { border: none; width: 30px; height: 30px; padding: 0; background: none; cursor: pointer; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <!-- HEADER -->
+    <header>
+        <div class="brand">
+            <i class="fas fa-sitemap"></i> AppEngine <span style="font-size:0.7rem; color:#666; margin-left:5px;">Part 4 (Pages)</span>
+        </div>
+        
+        <div class="device-toggle">
+            <button class="device-btn active" onclick="resizeCanvas('375px', '750px')"><i class="fas fa-mobile-alt"></i></button>
+            <button class="device-btn" onclick="resizeCanvas('768px', '1024px')"><i class="fas fa-tablet-alt"></i></button>
+            <button class="device-btn" onclick="resizeCanvas('100%', '100%')"><i class="fas fa-desktop"></i></button>
+        </div>
+
+        <div class="top-actions">
+            <button style="background:#10B981;" onclick="alert('All Pages Saved!')"><i class="fas fa-save"></i> Save Project</button>
+        </div>
+    </header>
+
+    <!-- WORKSPACE -->
+    <div class="workspace">
+        
+        <!-- SIDEBAR -->
+        <nav class="sidebar">
+            <div class="tool-icon" onclick="switchTab('layout')" title="Components"><i class="fas fa-layer-group"></i></div>
+            <div class="tool-icon active" onclick="switchTab('pages')" title="Page Manager"><i class="fas fa-file-alt"></i></div>
+            <div class="tool-icon" onclick="switchTab('basic')" title="Basic Elements"><i class="fas fa-font"></i></div>
+        </nav>
+
+        <!-- DRAWER (DYNAMIC) -->
+        <aside class="drawer-panel">
+            <div class="panel-header">
+                <span id="drawer-title">Page Manager</span>
+                <i class="fas fa-sync" style="cursor:pointer; font-size:0.8rem;" title="Refresh" onclick="renderPageList()"></i>
+            </div>
+            
+            <!-- Component List Container -->
+            <div id="component-list" class="hidden" style="padding-top:10px;"></div>
+
+            <!-- Page List Container (Part 4 Specific) -->
+            <div id="page-list-container">
+                <div id="page-list">
+                    <!-- JS Injected Pages -->
+                </div>
+                <div class="add-page-box">
+                    <button class="btn-add-page" onclick="addNewPage()">+ Create New Page</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- CANVAS -->
+        <main class="canvas-area">
+            <div class="mobile-frame" id="mobile-frame">
+                <div class="notch"></div>
+                <div id="app-preview" ondragover="allowDrop(event)" ondrop="drop(event)" ondragleave="leaveDrop(event)">
+                    <!-- Current Page Content Loads Here -->
+                </div>
+            </div>
+        </main>
+
+        <!-- PROPERTIES PANEL -->
+        <aside class="properties-panel" id="right-panel">
+            <div class="panel-header">Properties</div>
+            <div style="padding:20px; text-align:center; color:#666;" id="prop-message">
+                Select an element to edit.
+            </div>
+
+            <div id="prop-controls" class="hidden">
+                <!-- Content / Text -->
+                <div class="prop-group" id="group-text">
+                    <h4>Content</h4>
+                    <textarea id="input-text" rows="3" oninput="updateStyle('text', this.value)"></textarea>
+                </div>
+
+                <!-- NEW: Navigation Logic (Part 4) -->
+                <div class="prop-group">
+                    <h4>Interaction</h4>
+                    <div class="prop-row">
+                        <label>On Click</label>
+                        <select id="input-link" onchange="updateLink(this.value)">
+                            <option value="">No Action</option>
+                            <!-- Pages will be populated here -->
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Styling -->
+                <div class="prop-group">
+                    <h4>Style</h4>
+                    <div class="prop-row"><label>Color</label><input type="color" id="input-color" oninput="updateStyle('color', this.value)"></div>
+                    <div class="prop-row"><label>Background</label><input type="color" id="input-bg" oninput="updateStyle('background', this.value)"></div>
+                    <div class="prop-row"><label>Size</label><input type="number" id="input-size" oninput="updateStyle('fontSize', this.value + 'px')"></div>
+                    <div class="prop-row"><label>Padding</label><input type="range" id="input-padding" max="50" oninput="updateStyle('padding', this.value + 'px')"></div>
+                    <div class="prop-row"><label>Radius</label><input type="range" id="input-radius" max="50" oninput="updateStyle('borderRadius', this.value + 'px')"></div>
+                </div>
+
+                <div class="prop-group">
+                    <button style="width:100%; padding:10px; background:#EF4444; color:white; border:none; border-radius:6px; cursor:pointer;" onclick="deleteSelected()">Delete</button>
+                </div>
+            </div>
+        </aside>
+
+    </div>
+
+    <script>
+        // --- 1. DATA STRUCTURES ---
+        const componentLibrary = {
+            layout: [
+                { id: 'container', icon: 'fa-square', label: 'Container', html: '<div style="padding:20px; background:white; margin-bottom:10px; border-radius:8px; border:1px solid #eee; min-height:50px;"></div>' },
+                { id: 'grid2', icon: 'fa-columns', label: '2 Cols', html: '<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;"><div style="background:#f0f0f0; padding:20px;">1</div><div style="background:#f0f0f0; padding:20px;">2</div></div>' },
+                { id: 'divider', icon: 'fa-minus', label: 'Divider', html: '<hr style="border:0; border-top:1px solid #ddd; margin:15px 0;">' }
+            ],
+            basic: [
+                { id: 'heading', icon: 'fa-heading', label: 'Heading', html: '<h2 style="margin:0 0 10px 0; color:#111;">Heading</h2>' },
+                { id: 'paragraph', icon: 'fa-paragraph', label: 'Text', html: '<p style="margin:0 0 10px 0; color:#666;">Lorem ipsum text.</p>' },
+                { id: 'button', icon: 'fa-mouse-pointer', label: 'Button', html: '<button style="background:#2563EB; color:white; padding:12px; width:100%; border:none; border-radius:6px;">Button</button>' }
+            ]
+        };
+
+        // --- PART 4: PAGE MANAGER CORE ---
+        let appPages = {
+            'home': { name: 'Home', content: '<div style="padding:20px; text-align:center; color:#ccc;"><h3>Home Page</h3><p>Start designing...</p></div>' },
+            'about': { name: 'About Us', content: '<div style="padding:20px; text-align:center; color:#ccc;"><h3>About Page</h3></div>' },
+            'contact': { name: 'Contact', content: '<div style="padding:20px; text-align:center; color:#ccc;"><h3>Contact Page</h3></div>' }
+        };
+        let currentPage = 'home';
+        let selectedWrapper = null;
+        let selectedTarget = null;
+
+        // --- 2. INITIALIZATION ---
+        window.onload = function() {
+            renderPageList();
+            loadPageContent('home');
+        };
+
+        // --- 3. PAGE LOGIC ---
+        function renderPageList() {
+            const list = document.getElementById('page-list');
+            list.innerHTML = '';
+            
+            // Populate Navigation Dropdown in Properties Panel
+            const linkSelect = document.getElementById('input-link');
+            linkSelect.innerHTML = '<option value="">No Action</option>';
+
+            Object.keys(appPages).forEach(key => {
+                // Sidebar List
+                const item = document.createElement('div');
+                item.className = `page-item ${currentPage === key ? 'active-page' : ''}`;
+                item.innerHTML = `
+                    <span class="page-name">${appPages[key].name}</span>
+                    <span class="page-actions">
+                        ${key !== 'home' ? `<i class="fas fa-trash" onclick="deletePage('${key}', event)"></i>` : ''}
+                        <i class="fas fa-edit" title="Rename" onclick="renamePage('${key}', event)"></i>
+                    </span>
+                `;
+                item.onclick = () => switchPage(key);
+                list.appendChild(item);
+
+                // Properties Dropdown
+                const opt = document.createElement('option');
+                opt.value = key;
+                opt.innerText = appPages[key].name;
+                linkSelect.appendChild(opt);
+            });
+        }
+
+        function switchPage(pageKey) {
+            if(currentPage === pageKey) return;
+            
+            // 1. Save Current Page State
+            saveCurrentState();
+            
+            // 2. Switch
+            currentPage = pageKey;
+            
+            // 3. Load New Page
+            loadPageContent(pageKey);
+            renderPageList(); // Update active highlights
+        }
+
+        function saveCurrentState() {
+            const canvas = document.getElementById('app-preview');
+            // We save the innerHTML directly. In a real app, use JSON model.
+            appPages[currentPage].content = canvas.innerHTML;
+        }
+
+        function loadPageContent(pageKey) {
+            const canvas = document.getElementById('app-preview');
+            canvas.innerHTML = appPages[pageKey].content;
+            
+            // IMPORTANT: Re-attach event listeners to all loaded elements
+            // because innerHTML destroys references
+            const elements = canvas.querySelectorAll('.live-element');
+            elements.forEach(el => {
+                el.addEventListener('click', function(evt) { evt.stopPropagation(); selectElement(this); });
+            });
+            
+            // Deselect
+            selectedWrapper = null;
+            document.getElementById('prop-controls').classList.add('hidden');
+            document.getElementById('prop-message').style.display = 'block';
+        }
+
+        function addNewPage() {
+            const name = prompt("Enter Page Name (e.g., Services):");
+            if(name) {
+                // Create a slug (e.g., "Services" -> "services")
+                const slug = name.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
+                
+                if(appPages[slug]) {
+                    alert("Page already exists!");
+                    return;
+                }
+
+                saveCurrentState();
+                appPages[slug] = {
+                    name: name,
+                    content: `<div style="padding:20px; text-align:center; color:#ccc;"><h3>${name}</h3><p>New empty page</p></div>`
+                };
+                
+                switchPage(slug);
+            }
+        }
+
+        function deletePage(key, e) {
+            e.stopPropagation();
+            if(confirm(`Delete ${appPages[key].name}?`)) {
+                delete appPages[key];
+                if(currentPage === key) switchPage('home');
+                else renderPageList();
+            }
+        }
+        
+        function renamePage(key, e) {
+            e.stopPropagation();
+            const newName = prompt("Rename Page:", appPages[key].name);
+            if(newName) {
+                appPages[key].name = newName;
+                renderPageList();
+            }
+        }
+
+        // --- 4. SIDEBAR & DRAWER TOGGLE ---
+        function switchTab(tab) {
+            document.querySelectorAll('.tool-icon').forEach(el => el.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            
+            const title = document.getElementById('drawer-title');
+            const compList = document.getElementById('component-list');
+            const pageList = document.getElementById('page-list-container');
+
+            if(tab === 'pages') {
+                title.innerText = 'Page Manager';
+                compList.classList.add('hidden');
+                pageList.classList.remove('hidden');
+            } else {
+                title.innerText = 'Components';
+                pageList.classList.add('hidden');
+                compList.classList.remove('hidden');
+                loadComponents(tab);
+            }
+        }
+
+        function loadComponents(category) {
+            const list = document.getElementById('component-list');
+            list.innerHTML = '';
+            if(componentLibrary[category]) {
+                componentLibrary[category].forEach(comp => {
+                    const item = document.createElement('div');
+                    item.className = 'draggable-item';
+                    item.draggable = true;
+                    item.innerHTML = `<i class="fas ${comp.icon}"></i> <span>${comp.label}</span>`;
+                    item.addEventListener('dragstart', (e) => {
+                        e.dataTransfer.setData('html', comp.html);
+                        e.dataTransfer.setData('type', comp.id);
+                    });
+                    list.appendChild(item);
+                });
+            }
+        }
+
+        // --- 5. DRAG & DROP ---
+        function allowDrop(e) { e.preventDefault(); document.getElementById('app-preview').classList.add('drop-zone-active'); }
+        function leaveDrop(e) { document.getElementById('app-preview').classList.remove('drop-zone-active'); }
+        function drop(e) {
+            e.preventDefault();
+            document.getElementById('app-preview').classList.remove('drop-zone-active');
+            const htmlContent = e.dataTransfer.getData('html');
+            const type = e.dataTransfer.getData('type');
+            if(htmlContent) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'live-element';
+                wrapper.innerHTML = htmlContent;
+                wrapper.setAttribute('data-type', type);
+                // Default Navigate Attribute
+                wrapper.setAttribute('data-link', ''); 
+                wrapper.addEventListener('click', function(evt) { evt.stopPropagation(); selectElement(this); });
+                document.getElementById('app-preview').appendChild(wrapper);
+                selectElement(wrapper);
+            }
+        }
+
+        // --- 6. PROPERTIES & NAVIGATION LINKING ---
+        function selectElement(wrapper) {
+            if(selectedWrapper) selectedWrapper.classList.remove('selected');
+            selectedWrapper = wrapper;
+            selectedWrapper.classList.add('selected');
+            selectedTarget = selectedWrapper.firstElementChild;
+
+            document.getElementById('prop-message').style.display = 'none';
+            document.getElementById('prop-controls').classList.remove('hidden');
+
+            // Sync Inputs
+            const style = window.getComputedStyle(selectedTarget);
+            document.getElementById('input-text').value = selectedTarget.innerText;
+            if(selectedTarget.tagName === 'IMG' || selectedTarget.tagName === 'INPUT') {
+                document.getElementById('group-text').classList.add('hidden');
+            } else {
+                document.getElementById('group-text').classList.remove('hidden');
+            }
+            
+            // Sync Navigation Link
+            const linkVal = selectedWrapper.getAttribute('data-link') || '';
+            document.getElementById('input-link').value = linkVal;
+
+            // Sync Styles
+            document.getElementById('input-color').value = rgbToHex(style.color);
+            // ... (Other style syncs same as Part 3)
+        }
+
+        function updateStyle(prop, value) {
+            if(!selectedTarget) return;
+            if(prop === 'text') selectedTarget.innerText = value;
+            else selectedTarget.style[prop] = value;
+        }
+
+        // NAVIGATION LOGIC
+        function updateLink(pageSlug) {
+            if(!selectedWrapper) return;
+            selectedWrapper.setAttribute('data-link', pageSlug);
+            // Visual feedback
+            if(pageSlug) selectedWrapper.style.cursor = 'pointer';
+        }
+
+        function deleteSelected() {
+            if(selectedWrapper) {
+                selectedWrapper.remove();
+                selectedWrapper = null;
+                document.getElementById('prop-controls').classList.add('hidden');
+                document.getElementById('prop-message').style.display = 'block';
+            }
+        }
+        
+        function resizeCanvas(w, h) {
+            const frame = document.getElementById('mobile-frame');
+            frame.style.width = w; frame.style.height = h;
+            const notch = document.querySelector('.notch');
+            if(w === '100%') { frame.style.borderRadius = '0'; frame.style.border = 'none'; notch.style.display = 'none'; }
+            else { frame.style.borderRadius = '30px'; frame.style.border = '12px solid #111'; notch.style.display = 'block'; }
+        }
+
+        function rgbToHex(rgb) {
+            if(!rgb || rgb.indexOf('rgb') === -1) return '#000000';
+            const rgbValues = rgb.match(/\d+/g).map(Number);
+            return "#" + rgbValues.slice(0, 3).map(x => x.toString(16).padStart(2, '0')).join('');
+        }
+    </script>
+</body>
+</html>
