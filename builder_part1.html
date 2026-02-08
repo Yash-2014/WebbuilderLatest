@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate App Builder - Engine Core</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --editor-bg: #1e1e1e;
+            --panel-bg: #252526;
+            --border-color: #3e3e42;
+            --accent: #007acc;
+            --text-main: #ffffff;
+            --text-sub: #cccccc;
+            --hover-bg: #37373d;
+        }
+
+        * { box-sizing: border-box; outline: none; user-select: none; }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: var(--editor-bg); color: var(--text-main); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+        /* --- TOP BAR --- */
+        header {
+            height: 50px; background: var(--panel-bg); border-bottom: 1px solid var(--border-color);
+            display: flex; align-items: center; justify-content: space-between; padding: 0 20px;
+        }
+        .brand { font-weight: bold; font-size: 1.1rem; color: var(--accent); display: flex; align-items: center; gap: 10px; }
+        .top-actions button {
+            background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: 4px;
+            cursor: pointer; font-size: 0.85rem; font-weight: 600; margin-left: 10px;
+        }
+        .device-toggle {
+            display: flex; background: #333; border-radius: 4px; padding: 2px;
+        }
+        .device-btn {
+            background: transparent; border: none; color: #aaa; padding: 5px 10px; cursor: pointer;
+        }
+        .device-btn.active { background: #555; color: #fff; border-radius: 3px; }
+
+        /* --- MAIN WORKSPACE --- */
+        .workspace { display: flex; flex: 1; height: calc(100vh - 50px); }
+
+        /* --- LEFT SIDEBAR (TOOLS) --- */
+        .sidebar {
+            width: 60px; background: #333333; display: flex; flex-direction: column; align-items: center;
+            border-right: 1px solid var(--border-color); padding-top: 10px; z-index: 10;
+        }
+        .tool-icon {
+            width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+            color: #aaa; font-size: 1.2rem; cursor: pointer; margin-bottom: 10px; border-radius: 8px; transition: 0.2s;
+        }
+        .tool-icon:hover, .tool-icon.active { background: var(--accent); color: white; }
+        
+        /* --- DRAWER PANEL (Expands when tool clicked) --- */
+        .drawer-panel {
+            width: 250px; background: var(--panel-bg); border-right: 1px solid var(--border-color);
+            display: flex; flex-direction: column; transition: 0.3s;
+            overflow-y: auto;
+        }
+        .panel-header {
+            padding: 15px; border-bottom: 1px solid var(--border-color); font-weight: 600; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px;
+        }
+        .component-list { padding: 10px; }
+        .draggable-item {
+            background: var(--hover-bg); padding: 10px; margin-bottom: 8px; border-radius: 4px;
+            cursor: grab; display: flex; align-items: center; gap: 10px; border: 1px solid transparent;
+        }
+        .draggable-item:hover { border-color: var(--accent); }
+        .draggable-item i { color: var(--accent); }
+
+        /* --- CENTER CANVAS (Mobile Simulator) --- */
+        .canvas-area {
+            flex: 1; background: #1e1e1e; display: flex; justify-content: center; align-items: center;
+            position: relative; overflow: hidden;
+            background-image: radial-gradient(#333 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .mobile-frame {
+            width: 375px; height: 750px; background: white; border-radius: 30px;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5); border: 12px solid #111;
+            position: relative; overflow: hidden; transition: 0.3s;
+        }
+        .notch {
+            position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 150px; height: 25px; background: #111; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; z-index: 100;
+        }
+        
+        /* The Actual App Inside Frame */
+        #app-preview {
+            width: 100%; height: 100%; overflow-y: auto; background: #f3f4f6; color: #333;
+            /* Scrollbar hiding */
+            scrollbar-width: none; 
+        }
+        #app-preview::-webkit-scrollbar { display: none; }
+
+        /* --- RIGHT SIDEBAR (PROPERTIES) --- */
+        .properties-panel {
+            width: 300px; background: var(--panel-bg); border-left: 1px solid var(--border-color);
+            overflow-y: auto; display: flex; flex-direction: column;
+        }
+        .prop-section { padding: 15px; border-bottom: 1px solid var(--border-color); }
+        .prop-label { font-size: 0.8rem; color: #aaa; margin-bottom: 8px; display: block; }
+        .prop-input {
+            width: 100%; background: #111; border: 1px solid #444; color: white; padding: 8px;
+            border-radius: 4px; font-size: 0.9rem;
+        }
+        .prop-row { display: flex; gap: 10px; margin-bottom: 10px; }
+        
+        /* Highlight selected element in canvas */
+        .selected-element {
+            outline: 2px dashed var(--accent);
+            outline-offset: -2px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- TOP HEADER -->
+    <header>
+        <div class="brand">
+            <i class="fas fa-layer-group"></i> Ultimate Builder <span style="font-size:0.7rem; color:#666; margin-left:5px;">v3.0 PRO</span>
+        </div>
+        
+        <div class="device-toggle">
+            <button class="device-btn active" onclick="resizeCanvas('375px', '750px')"><i class="fas fa-mobile-alt"></i></button>
+            <button class="device-btn" onclick="resizeCanvas('768px', '1024px')"><i class="fas fa-tablet-alt"></i></button>
+            <button class="device-btn" onclick="resizeCanvas('100%', '100%')"><i class="fas fa-desktop"></i></button>
+        </div>
+
+        <div class="top-actions">
+            <button style="background:#444;"><i class="fas fa-undo"></i></button>
+            <button style="background:#444;"><i class="fas fa-redo"></i></button>
+            <button style="background:#10B981;"><i class="fas fa-eye"></i> Preview</button>
+            <button><i class="fas fa-save"></i> Save & Export</button>
+        </div>
+    </header>
+
+    <!-- MAIN WORKSPACE -->
+    <div class="workspace">
+        
+        <!-- TOOLBAR (Left) -->
+        <nav class="sidebar">
+            <div class="tool-icon active" onclick="switchTab('components')" title="Add Elements"><i class="fas fa-plus"></i></div>
+            <div class="tool-icon" onclick="switchTab('pages')" title="Pages"><i class="fas fa-file"></i></div>
+            <div class="tool-icon" onclick="switchTab('design')" title="Global Design"><i class="fas fa-paint-brush"></i></div>
+            <div class="tool-icon" onclick="switchTab('layers')" title="Layers"><i class="fas fa-stream"></i></div>
+            <div class="tool-icon" onclick="switchTab('settings')" title="App Settings"><i class="fas fa-cog"></i></div>
+        </nav>
+
+        <!-- COMPONENT DRAWER (Left Extended) -->
+        <aside class="drawer-panel" id="left-drawer">
+            <div class="panel-header" id="drawer-title">Components</div>
+            <div class="component-list" id="drawer-content">
+                <!-- Part 2 mein yahan Components aayenge -->
+                <p style="color:#666; font-size:0.8rem; text-align:center; margin-top:20px;">
+                    Select a tool from the left bar.
+                </p>
+            </div>
+        </aside>
+
+        <!-- CANVAS (Center) -->
+        <main class="canvas-area">
+            <div class="mobile-frame" id="mobile-frame">
+                <div class="notch"></div>
+                <!-- USER APP LIVE PREVIEW -->
+                <div id="app-preview">
+                    <!-- Blank Canvas Initial State -->
+                    <div style="padding:20px; text-align:center; margin-top:50%;">
+                        <h3 style="color:#aaa;">Empty Page</h3>
+                        <p style="color:#888; font-size:0.9rem;">Drag elements here</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- PROPERTIES PANEL (Right) -->
+        <aside class="properties-panel" id="right-panel">
+            <div class="panel-header">Properties</div>
+            <div style="padding:20px; text-align:center; color:#666;">
+                Select an element to edit properties.
+            </div>
+        </aside>
+
+    </div>
+
+    <script>
+        // --- PART 1: UI LOGIC ---
+
+        function resizeCanvas(w, h) {
+            const frame = document.getElementById('mobile-frame');
+            frame.style.width = w;
+            frame.style.height = h;
+            
+            // Remove notch on desktop/tablet mode
+            const notch = document.querySelector('.notch');
+            if(w === '100%') {
+                frame.style.borderRadius = '0';
+                frame.style.border = 'none';
+                notch.style.display = 'none';
+            } else {
+                frame.style.borderRadius = '30px';
+                frame.style.border = '12px solid #111';
+                notch.style.display = 'block';
+            }
+
+            // Update active button state
+            document.querySelectorAll('.device-btn').forEach(btn => btn.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+        }
+
+        function switchTab(tabName) {
+            // Highlight Icon
+            document.querySelectorAll('.tool-icon').forEach(icon => icon.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            // Update Drawer Title
+            const titleMap = {
+                'components': 'Add Elements',
+                'pages': 'Page Manager',
+                'design': 'Global Theme',
+                'layers': 'Layer Tree',
+                'settings': 'Configuration'
+            };
+            document.getElementById('drawer-title').innerText = titleMap[tabName];
+
+            // In Part 2, we will populate 'drawer-content' dynamically based on this tab
+            document.getElementById('drawer-content').innerHTML = `<p style="color:#888; text-align:center; padding:20px;">Loading ${titleMap[tabName]}...</p>`;
+        }
+    </script>
+</body>
+</html>
