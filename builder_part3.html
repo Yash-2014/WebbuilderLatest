@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Builder - Part 3 (Styling Engine)</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* --- CORE STYLES (From Part 1 & 2) --- */
+        :root {
+            --editor-bg: #1e1e1e;
+            --panel-bg: #252526;
+            --border-color: #3e3e42;
+            --accent: #007acc;
+            --text-main: #ffffff;
+            --text-sub: #cccccc;
+            --hover-bg: #37373d;
+            --input-bg: #3c3c3c;
+        }
+
+        * { box-sizing: border-box; outline: none; user-select: none; }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: var(--editor-bg); color: var(--text-main); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+        /* HEADER */
+        header { height: 50px; background: var(--panel-bg); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+        .brand { font-weight: bold; font-size: 1.1rem; color: var(--accent); display: flex; align-items: center; gap: 10px; }
+        .top-actions button { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 600; margin-left: 10px; }
+        .device-toggle { display: flex; background: #333; border-radius: 4px; padding: 2px; }
+        .device-btn { background: transparent; border: none; color: #aaa; padding: 5px 10px; cursor: pointer; }
+        .device-btn.active { background: #555; color: #fff; border-radius: 3px; }
+
+        /* WORKSPACE */
+        .workspace { display: flex; flex: 1; height: calc(100vh - 50px); }
+
+        /* SIDEBAR & DRAWER */
+        .sidebar { width: 60px; background: #333333; display: flex; flex-direction: column; align-items: center; border-right: 1px solid var(--border-color); padding-top: 10px; z-index: 10; }
+        .tool-icon { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 1.2rem; cursor: pointer; margin-bottom: 10px; border-radius: 8px; transition: 0.2s; }
+        .tool-icon:hover, .tool-icon.active { background: var(--accent); color: white; }
+        
+        .drawer-panel { width: 250px; background: var(--panel-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; transition: 0.3s; overflow-y: auto; }
+        .panel-header { padding: 15px; border-bottom: 1px solid var(--border-color); font-weight: 600; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; color: #aaa; }
+        
+        .draggable-item {
+            background: var(--hover-bg); padding: 12px; margin-bottom: 8px; border-radius: 6px; margin-left:10px; margin-right:10px;
+            cursor: grab; display: flex; align-items: center; gap: 10px; border: 1px solid transparent;
+            font-size: 0.9rem; color: #ddd; transition: 0.2s;
+        }
+        .draggable-item:hover { border-color: var(--accent); background: #444; }
+        .draggable-item i { color: var(--accent); width: 20px; text-align: center; }
+
+        /* CANVAS */
+        .canvas-area { flex: 1; background: #1e1e1e; display: flex; justify-content: center; align-items: center; position: relative; overflow: hidden; background-image: radial-gradient(#333 1px, transparent 1px); background-size: 20px 20px; }
+        .mobile-frame { width: 375px; height: 750px; background: white; border-radius: 30px; box-shadow: 0 0 50px rgba(0,0,0,0.5); border: 12px solid #111; position: relative; overflow: hidden; transition: 0.3s; }
+        .notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 150px; height: 25px; background: #111; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; z-index: 100; }
+        
+        #app-preview { 
+            width: 100%; height: 100%; overflow-y: auto; background: #f3f4f6; color: #333; 
+            padding-top: 30px; padding-bottom: 50px;
+        }
+        #app-preview::-webkit-scrollbar { display: none; }
+
+        /* LIVE ELEMENT HIGHLIGHTS */
+        .live-element { position: relative; cursor: pointer; border: 2px solid transparent; transition: all 0.1s; }
+        .live-element:hover { border: 2px dashed #007acc55; }
+        .live-element.selected { border: 2px solid var(--accent); z-index: 10; }
+        .drop-zone-active { background-color: #e0e7ff !important; box-shadow: inset 0 0 0 2px var(--accent); }
+
+        /* --- PART 3: NEW PROPERTIES PANEL STYLES --- */
+        .properties-panel { width: 320px; background: var(--panel-bg); border-left: 1px solid var(--border-color); overflow-y: auto; display: flex; flex-direction: column; }
+        
+        .prop-group { padding: 15px; border-bottom: 1px solid var(--border-color); }
+        .prop-group h4 { margin: 0 0 10px 0; font-size: 0.8rem; text-transform: uppercase; color: #888; letter-spacing: 0.5px; }
+        
+        .prop-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .prop-row label { font-size: 0.85rem; color: #ccc; }
+        
+        /* Inputs */
+        input[type="text"], input[type="number"], select, textarea {
+            background: var(--input-bg); border: 1px solid #555; color: white; padding: 6px; border-radius: 4px; font-size: 0.85rem; width: 100%;
+        }
+        input[type="color"] { border: none; width: 30px; height: 30px; padding: 0; background: none; cursor: pointer; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+
+        .btn-delete { width: 100%; padding: 10px; background: #EF4444; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 10px; font-weight: bold; }
+        .btn-delete:hover { background: #DC2626; }
+
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <!-- HEADER -->
+    <header>
+        <div class="brand">
+            <i class="fas fa-magic"></i> AppEngine <span style="font-size:0.7rem; color:#666; margin-left:5px;">Part 3 (Styling)</span>
+        </div>
+        
+        <div class="device-toggle">
+            <button class="device-btn active" onclick="resizeCanvas('375px', '750px')"><i class="fas fa-mobile-alt"></i></button>
+            <button class="device-btn" onclick="resizeCanvas('768px', '1024px')"><i class="fas fa-tablet-alt"></i></button>
+            <button class="device-btn" onclick="resizeCanvas('100%', '100%')"><i class="fas fa-desktop"></i></button>
+        </div>
+
+        <div class="top-actions">
+            <button style="background:#10B981;" onclick="alert('Styles Saved!')"><i class="fas fa-save"></i> Save</button>
+        </div>
+    </header>
+
+    <!-- WORKSPACE -->
+    <div class="workspace">
+        
+        <!-- SIDEBAR TOOLS -->
+        <nav class="sidebar">
+            <div class="tool-icon active" onclick="loadComponents('layout')" title="Layout"><i class="fas fa-layer-group"></i></div>
+            <div class="tool-icon" onclick="loadComponents('basic')" title="Basic"><i class="fas fa-font"></i></div>
+            <div class="tool-icon" onclick="loadComponents('media')" title="Media"><i class="fas fa-image"></i></div>
+            <div class="tool-icon" onclick="loadComponents('commerce')" title="Commerce"><i class="fas fa-shopping-cart"></i></div>
+            <div class="tool-icon" onclick="loadComponents('form')" title="Forms"><i class="fas fa-edit"></i></div>
+        </nav>
+
+        <!-- COMPONENT DRAWER -->
+        <aside class="drawer-panel">
+            <div class="panel-header" id="drawer-title">Components</div>
+            <div class="component-list" id="component-list" style="padding-top:10px;">
+                <!-- Populated by JS -->
+            </div>
+        </aside>
+
+        <!-- CANVAS -->
+        <main class="canvas-area">
+            <div class="mobile-frame" id="mobile-frame">
+                <div class="notch"></div>
+                <!-- DROP ZONE -->
+                <div id="app-preview" ondragover="allowDrop(event)" ondrop="drop(event)" ondragleave="leaveDrop(event)">
+                    <div id="empty-state" style="padding:100px 20px; text-align:center; opacity:0.5; pointer-events:none;">
+                        <i class="fas fa-paint-roller" style="font-size:2rem; margin-bottom:10px;"></i><br>
+                        Drag & Select to Edit
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- PROPERTIES PANEL (STYLING ENGINE) -->
+        <aside class="properties-panel" id="right-panel">
+            <div class="panel-header">Styling Engine</div>
+            
+            <div style="padding:20px; text-align:center; color:#666;" id="prop-message">
+                Select an element to edit properties.
+            </div>
+
+            <div id="prop-controls" class="hidden">
+                
+                <!-- 1. Content Editor -->
+                <div class="prop-group" id="group-text">
+                    <h4>Content</h4>
+                    <div class="prop-row">
+                        <textarea id="input-text" rows="3" oninput="updateStyle('text', this.value)"></textarea>
+                    </div>
+                </div>
+
+                <!-- 2. Typography -->
+                <div class="prop-group">
+                    <h4>Typography</h4>
+                    <div class="prop-row">
+                        <label>Color</label>
+                        <input type="color" id="input-color" oninput="updateStyle('color', this.value)">
+                    </div>
+                    <div class="prop-row">
+                        <label>Size (px)</label>
+                        <input type="number" id="input-size" style="width:60px" oninput="updateStyle('fontSize', this.value + 'px')">
+                    </div>
+                    <div class="prop-row">
+                        <label>Align</label>
+                        <select id="input-align" style="width:80px" onchange="updateStyle('textAlign', this.value)">
+                            <option value="left">Left</option>
+                            <option value="center">Center</option>
+                            <option value="right">Right</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 3. Box Model (Background & Spacing) -->
+                <div class="prop-group">
+                    <h4>Box Model</h4>
+                    <div class="prop-row">
+                        <label>Background</label>
+                        <input type="color" id="input-bg" oninput="updateStyle('background', this.value)">
+                    </div>
+                    <div class="prop-row">
+                        <label>Padding</label>
+                        <input type="range" id="input-padding" min="0" max="50" oninput="updateStyle('padding', this.value + 'px')">
+                    </div>
+                    <div class="prop-row">
+                        <label>Margin Bottom</label>
+                        <input type="range" id="input-margin" min="0" max="50" oninput="updateStyle('marginBottom', this.value + 'px')">
+                    </div>
+                </div>
+
+                <!-- 4. Borders & Radius -->
+                <div class="prop-group">
+                    <h4>Border & Radius</h4>
+                    <div class="prop-row">
+                        <label>Radius</label>
+                        <input type="range" id="input-radius" min="0" max="50" oninput="updateStyle('borderRadius', this.value + 'px')">
+                    </div>
+                    <div class="prop-row">
+                        <label>Border</label>
+                        <select id="input-border" style="width:100px" onchange="updateStyle('border', this.value)">
+                            <option value="none">None</option>
+                            <option value="1px solid #ccc">Thin</option>
+                            <option value="2px solid #333">Thick</option>
+                            <option value="1px dashed #ccc">Dashed</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 5. Image Specific (Hidden unless Image) -->
+                <div class="prop-group hidden" id="group-image">
+                    <h4>Image Source</h4>
+                    <div class="prop-row">
+                        <input type="text" id="input-src" placeholder="Image URL..." oninput="updateStyle('src', this.value)">
+                    </div>
+                </div>
+
+                <!-- 6. Actions -->
+                <div class="prop-group">
+                    <button class="btn-delete" onclick="deleteSelected()">Delete Component</button>
+                </div>
+
+            </div>
+        </aside>
+
+    </div>
+
+    <script>
+        // --- 1. COMPONENT DATA ---
+        const componentLibrary = {
+            layout: [
+                { id: 'container', icon: 'fa-square', label: 'Container', html: '<div style="padding:20px; background:white; margin-bottom:10px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); min-height:50px; border:1px solid #eee;"></div>' },
+                { id: 'grid2', icon: 'fa-columns', label: '2 Cols', html: '<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;"><div style="background:#f0f0f0; padding:20px;">Col 1</div><div style="background:#f0f0f0; padding:20px;">Col 2</div></div>' },
+                { id: 'divider', icon: 'fa-minus', label: 'Divider', html: '<hr style="border:0; border-top:1px solid #ddd; margin:15px 0;">' }
+            ],
+            basic: [
+                { id: 'heading', icon: 'fa-heading', label: 'Heading', html: '<h2 style="margin:0 0 10px 0; color:#111; font-size:1.5rem;">New Heading</h2>' },
+                { id: 'paragraph', icon: 'fa-paragraph', label: 'Paragraph', html: '<p style="margin:0 0 10px 0; color:#666; line-height:1.5; font-size:1rem;">Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>' },
+                { id: 'button', icon: 'fa-mouse-pointer', label: 'Button', html: '<button style="background:#2563EB; color:white; padding:12px 20px; border:none; border-radius:6px; width:100%; font-weight:600; font-size:1rem;">Click Me</button>' }
+            ],
+            media: [
+                { id: 'image', icon: 'fa-image', label: 'Image', html: '<img src="https://via.placeholder.com/400x200" style="width:100%; border-radius:8px; display:block; margin-bottom:10px;">' }
+            ],
+            commerce: [
+                { id: 'product', icon: 'fa-box', label: 'Product Card', html: '<div style="border:1px solid #eee; border-radius:8px; overflow:hidden; background:white; margin-bottom:10px;"><img src="https://via.placeholder.com/300x150" style="width:100%; height:120px; object-fit:cover;"><div style="padding:10px;"><div style="font-weight:bold; font-size:1rem;">Product Name</div><div style="color:#2563EB; margin-top:5px; font-weight:bold;">$99.00</div></div></div>' }
+            ],
+            form: [
+                { id: 'input', icon: 'fa-keyboard', label: 'Input', html: '<input type="text" placeholder="Enter text..." style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; margin-bottom:10px; background:#fff; color:#333;">' }
+            ]
+        };
+
+        let selectedWrapper = null; // The div.live-element
+        let selectedTarget = null;  // The actual element inside (img, h2, button)
+
+        window.onload = function() { loadComponents('layout'); };
+
+        // --- 2. SIDEBAR LOGIC ---
+        function loadComponents(category) {
+            document.querySelectorAll('.tool-icon').forEach(el => el.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            const list = document.getElementById('component-list');
+            list.innerHTML = '';
+            if(componentLibrary[category]) {
+                componentLibrary[category].forEach(comp => {
+                    const item = document.createElement('div');
+                    item.className = 'draggable-item';
+                    item.draggable = true;
+                    item.innerHTML = `<i class="fas ${comp.icon}"></i> <span>${comp.label}</span>`;
+                    item.addEventListener('dragstart', (e) => {
+                        e.dataTransfer.setData('html', comp.html);
+                        e.dataTransfer.setData('type', comp.id);
+                    });
+                    list.appendChild(item);
+                });
+            }
+        }
+
+        function resizeCanvas(w, h) {
+            const frame = document.getElementById('mobile-frame');
+            frame.style.width = w; frame.style.height = h;
+            const notch = document.querySelector('.notch');
+            if(w === '100%') { frame.style.borderRadius = '0'; frame.style.border = 'none'; notch.style.display = 'none'; }
+            else { frame.style.borderRadius = '30px'; frame.style.border = '12px solid #111'; notch.style.display = 'block'; }
+            document.querySelectorAll('.device-btn').forEach(btn => btn.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+        }
+
+        // --- 3. DRAG & DROP ---
+        function allowDrop(e) { e.preventDefault(); document.getElementById('app-preview').classList.add('drop-zone-active'); }
+        function leaveDrop(e) { document.getElementById('app-preview').classList.remove('drop-zone-active'); }
+
+        function drop(e) {
+            e.preventDefault();
+            document.getElementById('app-preview').classList.remove('drop-zone-active');
+            document.getElementById('empty-state').style.display = 'none';
+            const htmlContent = e.dataTransfer.getData('html');
+            const type = e.dataTransfer.getData('type');
+            if(htmlContent) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'live-element';
+                wrapper.innerHTML = htmlContent;
+                wrapper.setAttribute('data-type', type);
+                wrapper.addEventListener('click', function(evt) { evt.stopPropagation(); selectElement(this); });
+                document.getElementById('app-preview').appendChild(wrapper);
+                selectElement(wrapper);
+            }
+        }
+
+        // --- 4. SELECTION & STYLING ENGINE (CORE) ---
+        function selectElement(wrapper) {
+            if(selectedWrapper) selectedWrapper.classList.remove('selected');
+            selectedWrapper = wrapper;
+            selectedWrapper.classList.add('selected');
+
+            // Find the actual editable target inside the wrapper
+            // Usually the first child, but could be specific based on type
+            selectedTarget = selectedWrapper.firstElementChild; 
+
+            // Show Panel
+            document.getElementById('prop-message').style.display = 'none';
+            document.getElementById('prop-controls').classList.remove('hidden');
+
+            // --- SYNC INPUTS WITH CURRENT STYLES ---
+            const style = window.getComputedStyle(selectedTarget);
+            
+            // 1. Text Content
+            const textGroup = document.getElementById('group-text');
+            const inputTxt = document.getElementById('input-text');
+            if(selectedTarget.innerText !== undefined && selectedTarget.tagName !== 'IMG' && selectedTarget.tagName !== 'INPUT') {
+                textGroup.classList.remove('hidden');
+                inputTxt.value = selectedTarget.innerText;
+            } else {
+                textGroup.classList.add('hidden');
+            }
+
+            // 2. Image Source
+            const imgGroup = document.getElementById('group-image');
+            if(selectedTarget.tagName === 'IMG') {
+                imgGroup.classList.remove('hidden');
+                document.getElementById('input-src').value = selectedTarget.src;
+            } else {
+                imgGroup.classList.add('hidden');
+            }
+
+            // 3. Colors & Sizes
+            document.getElementById('input-color').value = rgbToHex(style.color);
+            // Handling background logic safely
+            const bgVal = style.backgroundColor;
+            document.getElementById('input-bg').value = (bgVal && bgVal !== 'rgba(0, 0, 0, 0)') ? rgbToHex(bgVal) : '#ffffff';
+            
+            document.getElementById('input-size').value = parseInt(style.fontSize) || 16;
+            document.getElementById('input-align').value = style.textAlign || 'left';
+            document.getElementById('input-padding').value = parseInt(style.padding) || 0;
+            document.getElementById('input-margin').value = parseInt(selectedWrapper.style.marginBottom) || 10; // Margin is on wrapper usually
+            document.getElementById('input-radius').value = parseInt(style.borderRadius) || 0;
+        }
+
+        // --- 5. UPDATE STYLE LOGIC ---
+        function updateStyle(prop, value) {
+            if(!selectedTarget) return;
+
+            if(prop === 'text') {
+                selectedTarget.innerText = value;
+            } else if (prop === 'src') {
+                if(selectedTarget.tagName === 'IMG') selectedTarget.src = value;
+            } else if (prop === 'marginBottom') {
+                // Margins applied to wrapper to space out elements
+                selectedWrapper.style.marginBottom = value;
+            } else if (prop === 'background') {
+                selectedTarget.style.backgroundColor = value;
+                // If it's a container, apply to wrapper? No, target is safer.
+            } else {
+                // General CSS properties
+                selectedTarget.style[prop] = value;
+            }
+        }
+
+        function deleteSelected() {
+            if(selectedWrapper) {
+                selectedWrapper.remove();
+                selectedWrapper = null;
+                selectedTarget = null;
+                document.getElementById('prop-controls').classList.add('hidden');
+                document.getElementById('prop-message').style.display = 'block';
+                if(document.getElementById('app-preview').children.length <= 1) {
+                    document.getElementById('empty-state').style.display = 'block';
+                }
+            }
+        }
+
+        // --- UTILS ---
+        function rgbToHex(rgb) {
+            if(!rgb || rgb.indexOf('rgb') === -1) return '#000000';
+            const rgbValues = rgb.match(/\d+/g).map(Number);
+            return "#" + rgbValues.slice(0, 3).map(x => x.toString(16).padStart(2, '0')).join('');
+        }
+
+        document.getElementById('app-preview').addEventListener('click', function(e) {
+            if(e.target === this) {
+                if(selectedWrapper) selectedWrapper.classList.remove('selected');
+                selectedWrapper = null;
+                document.getElementById('prop-controls').classList.add('hidden');
+                document.getElementById('prop-message').style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
