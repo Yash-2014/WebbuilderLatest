@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Builder - Part 2 (Component Engine)</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* --- COPYING CORE STYLES FROM PART 1 --- */
+        :root {
+            --editor-bg: #1e1e1e;
+            --panel-bg: #252526;
+            --border-color: #3e3e42;
+            --accent: #007acc;
+            --selected: #007acc;
+            --text-main: #ffffff;
+            --text-sub: #cccccc;
+            --hover-bg: #37373d;
+        }
+
+        * { box-sizing: border-box; outline: none; user-select: none; }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: var(--editor-bg); color: var(--text-main); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+        header { height: 50px; background: var(--panel-bg); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+        .brand { font-weight: bold; font-size: 1.1rem; color: var(--accent); display: flex; align-items: center; gap: 10px; }
+        .top-actions button { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 600; margin-left: 10px; }
+        .device-toggle { display: flex; background: #333; border-radius: 4px; padding: 2px; }
+        .device-btn { background: transparent; border: none; color: #aaa; padding: 5px 10px; cursor: pointer; }
+        .device-btn.active { background: #555; color: #fff; border-radius: 3px; }
+
+        .workspace { display: flex; flex: 1; height: calc(100vh - 50px); }
+
+        .sidebar { width: 60px; background: #333333; display: flex; flex-direction: column; align-items: center; border-right: 1px solid var(--border-color); padding-top: 10px; z-index: 10; }
+        .tool-icon { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 1.2rem; cursor: pointer; margin-bottom: 10px; border-radius: 8px; transition: 0.2s; }
+        .tool-icon:hover, .tool-icon.active { background: var(--accent); color: white; }
+        
+        .drawer-panel { width: 250px; background: var(--panel-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; transition: 0.3s; overflow-y: auto; }
+        .panel-header { padding: 15px; border-bottom: 1px solid var(--border-color); font-weight: 600; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; color: #aaa; }
+        .component-list { padding: 10px; }
+
+        /* --- DRAGGABLE ITEMS STYLE --- */
+        .draggable-item {
+            background: var(--hover-bg); padding: 12px; margin-bottom: 8px; border-radius: 6px;
+            cursor: grab; display: flex; align-items: center; gap: 10px; border: 1px solid transparent;
+            font-size: 0.9rem; color: #ddd; transition: 0.2s;
+        }
+        .draggable-item:hover { border-color: var(--accent); background: #444; }
+        .draggable-item i { color: var(--accent); width: 20px; text-align: center; }
+        .draggable-item:active { cursor: grabbing; }
+
+        .canvas-area { flex: 1; background: #1e1e1e; display: flex; justify-content: center; align-items: center; position: relative; overflow: hidden; background-image: radial-gradient(#333 1px, transparent 1px); background-size: 20px 20px; }
+        .mobile-frame { width: 375px; height: 750px; background: white; border-radius: 30px; box-shadow: 0 0 50px rgba(0,0,0,0.5); border: 12px solid #111; position: relative; overflow: hidden; transition: 0.3s; }
+        .notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 150px; height: 25px; background: #111; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; z-index: 100; }
+        
+        /* --- APP PREVIEW AREA --- */
+        #app-preview { 
+            width: 100%; height: 100%; overflow-y: auto; background: #f3f4f6; color: #333; 
+            padding-top: 30px; /* Space for notch */
+            padding-bottom: 50px;
+        }
+        #app-preview::-webkit-scrollbar { display: none; }
+
+        /* --- ELEMENT HOVER & SELECTION --- */
+        .live-element {
+            position: relative;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.1s;
+        }
+        .live-element:hover {
+            border: 2px dashed #007acc55; /* Light blue dashed on hover */
+        }
+        .live-element.selected {
+            border: 2px solid var(--accent); /* Solid blue on select */
+            z-index: 10;
+        }
+        /* Action buttons for selected element (Delete/Move) - To be active in Part 3 */
+        .element-actions {
+            display: none;
+            position: absolute; top: -25px; right: 0;
+            background: var(--accent); color: white; border-radius: 4px; padding: 2px 5px;
+            font-size: 10px; font-weight: bold;
+        }
+        .live-element.selected .element-actions { display: block; }
+
+        /* DROP ZONE HIGHLIGHT */
+        .drop-zone-active {
+            background-color: #e0e7ff !important;
+            box-shadow: inset 0 0 0 2px var(--accent);
+        }
+
+        .properties-panel { width: 300px; background: var(--panel-bg); border-left: 1px solid var(--border-color); overflow-y: auto; display: flex; flex-direction: column; }
+        .prop-section { padding: 15px; border-bottom: 1px solid var(--border-color); }
+        .prop-label { font-size: 0.8rem; color: #aaa; margin-bottom: 8px; display: block; }
+    </style>
+</head>
+<body>
+
+    <!-- HEADER -->
+    <header>
+        <div class="brand">
+            <i class="fas fa-cubes"></i> AppEngine <span style="font-size:0.7rem; color:#666; margin-left:5px;">Part 2</span>
+        </div>
+        
+        <div class="device-toggle">
+            <button class="device-btn active" onclick="resizeCanvas('375px', '750px')"><i class="fas fa-mobile-alt"></i></button>
+            <button class="device-btn" onclick="resizeCanvas('768px', '1024px')"><i class="fas fa-tablet-alt"></i></button>
+            <button class="device-btn" onclick="resizeCanvas('100%', '100%')"><i class="fas fa-desktop"></i></button>
+        </div>
+
+        <div class="top-actions">
+            <button style="background:#10B981;" onclick="alert('Saving Layout...')"><i class="fas fa-save"></i> Save</button>
+        </div>
+    </header>
+
+    <!-- WORKSPACE -->
+    <div class="workspace">
+        
+        <!-- SIDEBAR -->
+        <nav class="sidebar">
+            <div class="tool-icon active" onclick="loadComponents('layout')" title="Layout"><i class="fas fa-layer-group"></i></div>
+            <div class="tool-icon" onclick="loadComponents('basic')" title="Basic"><i class="fas fa-font"></i></div>
+            <div class="tool-icon" onclick="loadComponents('media')" title="Media"><i class="fas fa-image"></i></div>
+            <div class="tool-icon" onclick="loadComponents('commerce')" title="Commerce"><i class="fas fa-shopping-cart"></i></div>
+            <div class="tool-icon" onclick="loadComponents('form')" title="Forms"><i class="fas fa-edit"></i></div>
+        </nav>
+
+        <!-- COMPONENT DRAWER -->
+        <aside class="drawer-panel">
+            <div class="panel-header" id="drawer-title">Components</div>
+            <div class="component-list" id="component-list">
+                <!-- Javascript will populate this -->
+            </div>
+        </aside>
+
+        <!-- CANVAS -->
+        <main class="canvas-area">
+            <div class="mobile-frame" id="mobile-frame">
+                <div class="notch"></div>
+                <!-- DROP ZONE -->
+                <div id="app-preview" ondragover="allowDrop(event)" ondrop="drop(event)" ondragleave="leaveDrop(event)">
+                    <!-- Hint Text -->
+                    <div id="empty-state" style="padding:100px 20px; text-align:center; opacity:0.5; pointer-events:none;">
+                        <i class="fas fa-cloud-upload-alt" style="font-size:2rem; margin-bottom:10px;"></i><br>
+                        Drag components here
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- PROPERTIES PANEL -->
+        <aside class="properties-panel" id="right-panel">
+            <div class="panel-header">Properties</div>
+            <div style="padding:20px; text-align:center; color:#666;" id="prop-message">
+                Select an element on canvas to edit.
+            </div>
+            <!-- Dynamic Properties will load here in Part 3 -->
+            <div id="prop-controls" style="display:none;">
+                <div class="prop-section">
+                    <span class="prop-label">Selected Element</span>
+                    <strong style="color:var(--accent)" id="sel-el-name">None</strong>
+                </div>
+                <div class="prop-section">
+                    <button style="width:100%; padding:10px; background:#EF4444; color:white; border:none; border-radius:4px; cursor:pointer;" onclick="deleteSelected()">Delete Element</button>
+                </div>
+            </div>
+        </aside>
+
+    </div>
+
+    <script>
+        // --- 1. COMPONENT LIBRARY (The Brain) ---
+        // This defines what HTML creates when you drop an item
+        const componentLibrary = {
+            layout: [
+                { id: 'container', icon: 'fa-square', label: 'Container', html: '<div style="padding:20px; background:white; margin-bottom:10px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); min-height:50px;"></div>' },
+                { id: 'grid2', icon: 'fa-columns', label: '2 Col Grid', html: '<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;"><div style="background:#eee; padding:20px; text-align:center;">Col 1</div><div style="background:#eee; padding:20px; text-align:center;">Col 2</div></div>' },
+                { id: 'divider', icon: 'fa-minus', label: 'Divider', html: '<hr style="border:0; border-top:1px solid #ddd; margin:15px 0;">' }
+            ],
+            basic: [
+                { id: 'heading', icon: 'fa-heading', label: 'Heading', html: '<h2 style="margin:0 0 10px 0; color:#333;">New Heading</h2>' },
+                { id: 'paragraph', icon: 'fa-paragraph', label: 'Paragraph', html: '<p style="margin:0 0 10px 0; color:#666; line-height:1.5;">Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>' },
+                { id: 'button', icon: 'fa-mouse-pointer', label: 'Button', html: '<button style="background:#2563EB; color:white; padding:12px 20px; border:none; border-radius:6px; width:100%; font-weight:600;">Click Me</button>' }
+            ],
+            media: [
+                { id: 'image', icon: 'fa-image', label: 'Image', html: '<img src="https://via.placeholder.com/400x200" style="width:100%; border-radius:8px; display:block; margin-bottom:10px;">' },
+                { id: 'video', icon: 'fa-video', label: 'Video Placeholder', html: '<div style="background:#000; height:180px; display:flex; align-items:center; justify-content:center; color:white; border-radius:8px; margin-bottom:10px;"><i class="fas fa-play-circle" style="font-size:2rem;"></i></div>' }
+            ],
+            commerce: [
+                { id: 'product', icon: 'fa-box', label: 'Product Card', html: '<div style="border:1px solid #eee; border-radius:8px; overflow:hidden; background:white; margin-bottom:10px;"><div style="height:120px; background:#ddd;"></div><div style="padding:10px;"><div style="font-weight:bold;">Product Name</div><div style="color:#2563EB; margin-top:5px;">$99.00</div></div></div>' },
+                { id: 'cart', icon: 'fa-cart-plus', label: 'Cart Button', html: '<button style="background:#10B981; color:white; padding:10px; width:100%; border:none; border-radius:6px;"><i class="fas fa-shopping-cart"></i> Add to Cart</button>' }
+            ],
+            form: [
+                { id: 'input', icon: 'fa-keyboard', label: 'Input Field', html: '<input type="text" placeholder="Enter text..." style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; margin-bottom:10px;">' },
+                { id: 'textarea', icon: 'fa-align-left', label: 'Text Area', html: '<textarea placeholder="Enter message..." style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; margin-bottom:10px;"></textarea>' }
+            ]
+        };
+
+        let selectedElement = null;
+
+        // --- 2. INITIALIZATION ---
+        window.onload = function() {
+            loadComponents('layout'); // Load default tab
+        };
+
+        // --- 3. SIDEBAR LOGIC ---
+        function loadComponents(category) {
+            // Update Sidebar UI
+            document.querySelectorAll('.tool-icon').forEach(el => el.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            const list = document.getElementById('component-list');
+            list.innerHTML = ''; // Clear existing
+
+            // Populate items
+            if(componentLibrary[category]) {
+                componentLibrary[category].forEach(comp => {
+                    const item = document.createElement('div');
+                    item.className = 'draggable-item';
+                    item.draggable = true;
+                    item.innerHTML = `<i class="fas ${comp.icon}"></i> <span>${comp.label}</span>`;
+                    
+                    // Attach Event for Drag Start
+                    item.addEventListener('dragstart', (e) => {
+                        e.dataTransfer.setData('html', comp.html);
+                        e.dataTransfer.setData('type', comp.id);
+                    });
+
+                    list.appendChild(item);
+                });
+            }
+        }
+
+        function resizeCanvas(w, h) {
+            const frame = document.getElementById('mobile-frame');
+            frame.style.width = w; frame.style.height = h;
+            const notch = document.querySelector('.notch');
+            if(w === '100%') {
+                frame.style.borderRadius = '0'; frame.style.border = 'none'; notch.style.display = 'none';
+            } else {
+                frame.style.borderRadius = '30px'; frame.style.border = '12px solid #111'; notch.style.display = 'block';
+            }
+            document.querySelectorAll('.device-btn').forEach(btn => btn.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+        }
+
+        // --- 4. DRAG & DROP ENGINE ---
+        function allowDrop(e) {
+            e.preventDefault();
+            const canvas = document.getElementById('app-preview');
+            canvas.classList.add('drop-zone-active');
+        }
+
+        function leaveDrop(e) {
+            document.getElementById('app-preview').classList.remove('drop-zone-active');
+        }
+
+        function drop(e) {
+            e.preventDefault();
+            document.getElementById('app-preview').classList.remove('drop-zone-active');
+            document.getElementById('empty-state').style.display = 'none';
+
+            // Get Data
+            const htmlContent = e.dataTransfer.getData('html');
+            const type = e.dataTransfer.getData('type');
+
+            if(htmlContent) {
+                // Create Wrapper Element (for selection logic)
+                const wrapper = document.createElement('div');
+                wrapper.className = 'live-element';
+                wrapper.innerHTML = htmlContent;
+                wrapper.setAttribute('data-type', type);
+
+                // Add Click Event for Selection
+                wrapper.addEventListener('click', function(evt) {
+                    evt.stopPropagation(); // Prevent bubbling
+                    selectElement(this);
+                });
+
+                // Append to Canvas
+                document.getElementById('app-preview').appendChild(wrapper);
+                
+                // Auto-select the new element
+                selectElement(wrapper);
+            }
+        }
+
+        // --- 5. SELECTION ENGINE ---
+        function selectElement(el) {
+            // Deselect previous
+            if(selectedElement) {
+                selectedElement.classList.remove('selected');
+            }
+
+            // Select new
+            selectedElement = el;
+            selectedElement.classList.add('selected');
+
+            // Update Properties Panel
+            document.getElementById('prop-message').style.display = 'none';
+            document.getElementById('prop-controls').style.display = 'block';
+            document.getElementById('sel-el-name').innerText = el.getAttribute('data-type').toUpperCase();
+        }
+
+        function deleteSelected() {
+            if(selectedElement) {
+                selectedElement.remove();
+                selectedElement = null;
+                document.getElementById('prop-controls').style.display = 'none';
+                document.getElementById('prop-message').style.display = 'block';
+                
+                // Check if empty
+                if(document.getElementById('app-preview').children.length <= 1) { // 1 because empty-state is hidden but there
+                    document.getElementById('empty-state').style.display = 'block';
+                }
+            }
+        }
+
+        // Click outside to deselect
+        document.getElementById('app-preview').addEventListener('click', function(e) {
+            if(e.target === this) {
+                if(selectedElement) selectedElement.classList.remove('selected');
+                selectedElement = null;
+                document.getElementById('prop-controls').style.display = 'none';
+                document.getElementById('prop-message').style.display = 'block';
+            }
+        });
+
+    </script>
+</body>
+</html>
